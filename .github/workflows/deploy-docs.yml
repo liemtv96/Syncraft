@@ -30,12 +30,12 @@ jobs:
       - name: Build documentation
         run: |
           doxygen docs/Doxyfile
-          touch build/docs/html/.nojekyll
+          touch site/html/.nojekyll
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: build/docs/html
+          path: site/html
 
   deploy:
     needs: build

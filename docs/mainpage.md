@@ -20,7 +20,7 @@ doxygen docs/Doxyfile
 The generated site is written to:
 
 ```text
-build/docs/html
+site/html
 ```
 
 ## GitHub Pages deployment
