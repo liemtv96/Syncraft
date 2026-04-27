@@ -1,10 +1,17 @@
 # Syncraft
 
-Standalone Python package and CLI for synchronized messaging workflows.
+![Syncraft banner](assets/syncraft-banner.png)
 
-It is structured as a normal standalone repository that can be published to PyPI or installed directly from source.
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](#install)
+[![CLI](https://img.shields.io/badge/CLI-Developer%20Tool-0A0A0A?logo=gnubash&logoColor=white)](#cli-usage)
+[![Pydantic](https://img.shields.io/badge/Pydantic-Data%20Models-E92063?logo=pydantic&logoColor=white)](#python-usage)
+[![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-ORM-D71F00?logo=sqlalchemy&logoColor=white)](#python-usage)
+[![SQLite](https://img.shields.io/badge/SQLite-Storage-003B57?logo=sqlite&logoColor=white)](#configuration)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Optional-336791?logo=postgresql&logoColor=white)](#install)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Optional-47A248?logo=mongodb&logoColor=white)](#install)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
 
-It keeps the storage, schema, provider, and synchronization logic, but exposes it as:
+Standalone Python package and CLI for synchronized messaging workflows. It keeps the storage, schema, provider, and synchronization logic, but exposes it as:
 
 - a Python package for direct imports
 - a CLI for local tooling and automation
@@ -87,7 +94,7 @@ print(app.list_channels())
 print(app.list_history())
 ```
 
-Validated against live credentials on April 27, 2026:
+Validated against live credentials:
 
 ```json
 {
@@ -118,7 +125,7 @@ Verified `SyncraftApp` channel lifecycle result shape:
 {
   "app_test_channel_config": {
     "status": "success",
-    "message": "Telegram bot @rilab_studio_bot can reach Pulsar"
+    "message": "Telegram bot @rilab_studio_bot can reach Syncraft"
   },
   "app_create_channel": {
     "id": "28c88536-82fb-49fc-b0bb-01879c046dc1",
@@ -404,7 +411,7 @@ syncraft channels create --payload '{
 }'
 ```
 
-Validated against live credentials on April 27, 2026:
+Validated against live credentials:
 
 ```sh
 syncraft channel-test-config --payload '{ ... }'
@@ -413,7 +420,7 @@ syncraft channel-test-config --payload '{ ... }'
 ```json
 {
   "status": "success",
-  "message": "Telegram bot @rilab_studio_bot can reach Pulsar"
+  "message": "Telegram bot @rilab_studio_bot can reach Syncraft"
 }
 ```
 
@@ -562,3 +569,9 @@ SYNCRAFT_APP_NAME=Syncraft
 ```
 
 Default local storage is SQLite under the Syncraft application data directory.
+
+## License
+
+Syncraft is released under the MIT License.
+
+See [LICENSE](LICENSE) for the full text.
