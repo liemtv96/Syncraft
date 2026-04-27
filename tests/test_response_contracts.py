@@ -27,7 +27,8 @@ def _build_app_config(temp_dir: str) -> AppConfig:
 class ResponseContractTests(unittest.TestCase):
     def test_channel_create_returns_blank_last_test_status(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            with SyncraftApp(_build_app_config(temp_dir)) as app:
+            app = SyncraftApp(_build_app_config(temp_dir))
+            try:
                 created = app.create_channel(
                     {
                         "name": "Slack Alerts",
@@ -37,6 +38,8 @@ class ResponseContractTests(unittest.TestCase):
                         "target_config": {"values": {}},
                     }
                 )
+            finally:
+                app.close()
 
         self.assertEqual(created.last_test_status, "")
 
@@ -66,15 +69,19 @@ class ResponseContractTests(unittest.TestCase):
                 session.close()
                 engine.dispose()
 
-            with SyncraftApp(config) as app:
+            app = SyncraftApp(config)
+            try:
                 channels = app.list_channels()
+            finally:
+                app.close()
 
         self.assertEqual(len(channels), 1)
         self.assertEqual(channels[0].last_test_status, "")
 
     def test_channel_test_and_sample_return_documented_status_shape(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            with SyncraftApp(_build_app_config(temp_dir)) as app:
+            app = SyncraftApp(_build_app_config(temp_dir))
+            try:
                 created = app.create_channel(
                     {
                         "name": "Slack Alerts",
@@ -89,6 +96,8 @@ class ResponseContractTests(unittest.TestCase):
                     tested = app.test_channel(created.id)
                 with patch("syncraft.app.send_channel_sample", return_value=("success", "sent")):
                     sampled = app.send_channel_sample_message(created.id)
+            finally:
+                app.close()
 
         self.assertEqual(tested.status, "active")
         self.assertEqual(tested.last_test_status, "success")

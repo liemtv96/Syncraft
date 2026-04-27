@@ -296,6 +296,8 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, ValidationError, json.JSONDecodeError) as exc:
         print(dumps_pretty({"error": str(exc)}), file=sys.stderr)
         return 2
+    finally:
+        app.close()
 
     if result is not None:
         print(dumps_pretty(result))
