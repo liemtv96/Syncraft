@@ -57,6 +57,8 @@ from syncraft.storage_backend import StorageBackend, build_storage_dependency
 
 
 class SyncraftApp:
+    """High-level application facade for Syncraft storage and messaging workflows"""
+
     def __init__(self, config: AppConfig | None = None):
         self.config = config or load_config()
         self.database_manager = DatabaseManager(self.config)
@@ -67,6 +69,8 @@ class SyncraftApp:
 
     @contextmanager
     def service(self) -> StorageBackend:
+        """Yield the active storage service bound to the current runtime configuration"""
+
         generator = self._storage_dependency()
         service = next(generator)
         try:
@@ -75,6 +79,8 @@ class SyncraftApp:
             generator.close()
 
     def healthcheck(self) -> dict[str, str]:
+        """Return the current runtime health summary"""
+
         config = self.database_manager.config
         return {
             "status": "ok",
@@ -154,6 +160,8 @@ class SyncraftApp:
             return [channel_to_schema(channel) for channel in service.list_channels()]
 
     def list_channel_support(self):
+        """List supported providers, auth modes, and required configuration fields"""
+
         return list_provider_support()
 
     def create_channel(self, payload: ChannelCreate | dict[str, Any]):
@@ -269,6 +277,8 @@ class SyncraftApp:
             service.delete_variable(variable_id)
 
     def broadcast_content(self, payload: BroadcastRequest | dict[str, Any]) -> BroadcastResponse:
+        """Deliver content and attachments to one or more configured channels"""
+
         payload = self._coerce_model(payload, BroadcastRequest)
         if not payload.title.strip() and not payload.content.strip() and not payload.attachments:
             return BroadcastResponse(status="failed", results=[])
@@ -453,4 +463,6 @@ def to_plain_data(value: Any) -> Any:
 
 
 def dumps_pretty(value: Any) -> str:
+    """Serialize app data into stable, indented JSON for CLI and debugging output"""
+
     return json.dumps(to_plain_data(value), indent=2, sort_keys=True)
