@@ -24,6 +24,8 @@ ActivityStatus = Literal["info", "success", "warning", "error"]
 
 
 class DbConnectionConfig(BaseModel):
+    """Connection fields for database-backed storage engines"""
+
     host: str = ""
     port: str = ""
     database: str = ""
@@ -32,6 +34,8 @@ class DbConnectionConfig(BaseModel):
 
 
 class SettingsPayload(BaseModel):
+    """Mutable application settings accepted by the service and CLI layers"""
+
     push_confirmations: bool = True
     error_alerts: bool = True
     compact_mode: bool = False
@@ -55,6 +59,8 @@ class SettingsResponse(SettingsPayload):
 
 
 class ChannelCapabilities(BaseModel):
+    """Feature flags describing what a channel can deliver"""
+
     text: bool = True
     files: bool = False
     images: bool = False
@@ -62,6 +68,8 @@ class ChannelCapabilities(BaseModel):
 
 
 class ChannelConfig(BaseModel):
+    """Opaque provider-specific configuration key-value storage"""
+
     model_config = ConfigDict(extra="allow")
 
     values: dict[str, Any] = Field(default_factory=dict)
@@ -72,6 +80,8 @@ class ChannelConfig(BaseModel):
 
 
 class ChannelBase(BaseModel):
+    """Common channel fields shared by create and response models"""
+
     name: str
     platform: Platform
     status: ChannelStatus = "active"
@@ -87,10 +97,14 @@ class ChannelBase(BaseModel):
 
 
 class ChannelCreate(ChannelBase):
+    """Payload used to register a new delivery channel"""
+
     pass
 
 
 class ChannelUpdate(BaseModel):
+    """Partial update payload for an existing delivery channel"""
+
     name: str | None = None
     status: ChannelStatus | None = None
     auth_config: ChannelConfig | None = None
@@ -112,6 +126,8 @@ class ChannelResponse(ChannelBase):
 
 
 class TemplateBase(BaseModel):
+    """Reusable message template metadata and content"""
+
     name: str
     description: str = ""
     content: str = ""
@@ -140,6 +156,8 @@ class TemplateResponse(TemplateBase):
 
 
 class VariableBase(BaseModel):
+    """Named substitution value used by message templates"""
+
     name: str
     default_value: str = ""
     description: str = ""
@@ -164,6 +182,8 @@ class VariableResponse(VariableBase):
 
 
 class ApiKeyBase(BaseModel):
+    """Stored API credential metadata"""
+
     name: str
     provider: str
     description: str = ""
@@ -192,6 +212,8 @@ class ApiKeyResponse(ApiKeyBase):
 
 
 class WebhookBase(BaseModel):
+    """Webhook registration fields for outbound event delivery"""
+
     name: str
     target_url: str
     event_scope: EventScope = "app"
@@ -230,6 +252,8 @@ class HealthResponse(BaseModel):
 
 
 class BroadcastAttachment(BaseModel):
+    """Attachment payload included in a broadcast request"""
+
     name: str
     type: str
     size: int
@@ -239,6 +263,8 @@ class BroadcastAttachment(BaseModel):
 
 
 class BroadcastRequest(BaseModel):
+    """Request body for sending content to multiple channels"""
+
     title: str = ""
     content: str = ""
     channel_ids: list[str] = Field(default_factory=list)
