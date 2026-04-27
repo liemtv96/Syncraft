@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "syncraft"
+version = "1.0.0"
+description = "Standalone CLI and Python backend toolkit for synchronized messaging workflows."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.13"
+keywords = ["cli", "automation", "messaging", "sync", "toolkit"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Utilities",
+]
+dependencies = [
+  "pydantic>=2.7,<3.0",
+  "sqlalchemy>=2.0,<3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2.0",
+]
+postgresql = [
+  "psycopg[binary]>=3.1,<4.0",
+]
+mysql = [
+  "cryptography>=42,<46",
+  "pymysql>=1.1,<2.0",
+]
+mongodb = [
+  "pymongo>=4.8,<5.0",
+]
+
+[project.scripts]
+syncraft = "syncraft.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
