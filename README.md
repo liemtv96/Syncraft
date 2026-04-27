@@ -1,5 +1,3 @@
-# Syncraft
-
 ![Syncraft banner](assets/syncraft-banner.png)
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](#install)
