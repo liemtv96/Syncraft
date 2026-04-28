@@ -59,6 +59,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("tag", help="Git tag, for example v1.2.3 or v1.2.3-beta.1")
     parser.add_argument(
+        "--dev-suffix",
+        type=int,
+        help="Append a unique PEP 440 development release suffix such as .dev123.",
+    )
+    parser.add_argument(
         "--write-files",
         action="store_true",
         help="Rewrite version fields in tracked package metadata files.",
@@ -70,6 +75,12 @@ def main() -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+
+    if args.dev_suffix is not None:
+        if args.dev_suffix < 0:
+            print("--dev-suffix must be non-negative", file=sys.stderr)
+            return 1
+        version = f"{version}.dev{args.dev_suffix}"
 
     if args.write_files:
         root = pathlib.Path(__file__).resolve().parent.parent
