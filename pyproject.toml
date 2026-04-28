@@ -38,6 +38,11 @@ mongodb = [
   "pymongo>=4.8,<5.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/liemtv96/Syncraft"
+Documentation = "https://liemtv96.github.io/Syncraft/"
+Repository = "https://github.com/liemtv96/Syncraft"
+
 [project.scripts]
 syncraft = "syncraft.cli:main"
 
