@@ -1,4 +1,4 @@
-![Syncraft banner](assets/syncraft-banner.png)
+![Syncraft banner](https://liemtv96.github.io/Syncraft/assets/syncraft-banner.png)
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](#install)
 [![CLI](https://img.shields.io/badge/CLI-Developer%20Tool-0A0A0A?logo=gnubash&logoColor=white)](#cli-usage)
@@ -19,7 +19,7 @@ Standalone Python package and CLI for synchronized messaging workflows. It keeps
 ```sh
 python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e .
+python -m pip install syncraft-channel-weave
 python -m syncraft health
 syncraft health
 ```
@@ -27,9 +27,9 @@ syncraft health
 Optional storage extras:
 
 ```sh
-python -m pip install -e .[postgresql]
-python -m pip install -e .[mysql]
-python -m pip install -e .[mongodb]
+python -m pip install "syncraft-channel-weave[postgresql]"
+python -m pip install "syncraft-channel-weave[mysql]"
+python -m pip install "syncraft-channel-weave[mongodb]"
 ```
 
 ## CLI usage
