@@ -1,4 +1,4 @@
-![Syncraft banner](https://liemtv96.github.io/Syncraft/assets/syncraft-banner.png)
+![Syncraft banner](https://raw.githubusercontent.com/liemtv96/Syncraft/main/assets/syncraft-banner.png)
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](#install)
 [![CLI](https://img.shields.io/badge/CLI-Developer%20Tool-0A0A0A?logo=gnubash&logoColor=white)](#cli-usage)
