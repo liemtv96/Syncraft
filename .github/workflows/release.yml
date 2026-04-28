@@ -40,6 +40,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Resolve package version from tag
+        run: |
+          PACKAGE_VERSION="$(python scripts/resolve_release_version.py "${{ steps.tag.outputs.tag_name }}" --write-files)"
+          echo "Building package version $PACKAGE_VERSION from tag ${{ steps.tag.outputs.tag_name }}"
+
       - name: Build distributions
         run: |
           python -m pip install --upgrade pip
