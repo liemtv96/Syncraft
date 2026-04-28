@@ -28,16 +28,18 @@ class ResponseContractTests(unittest.TestCase):
     def test_channel_create_returns_blank_last_test_status(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             app = SyncraftApp(_build_app_config(temp_dir))
-
-            created = app.create_channel(
-                {
-                    "name": "Slack Alerts",
-                    "platform": "slack",
-                    "auth_type": "webhook",
-                    "auth_config": {"values": {"webhook_url": "https://hooks.slack.com/services/XXX/YYY/ZZZ"}},
-                    "target_config": {"values": {}},
-                }
-            )
+            try:
+                created = app.create_channel(
+                    {
+                        "name": "Slack Alerts",
+                        "platform": "slack",
+                        "auth_type": "webhook",
+                        "auth_config": {"values": {"webhook_url": "https://hooks.slack.com/services/XXX/YYY/ZZZ"}},
+                        "target_config": {"values": {}},
+                    }
+                )
+            finally:
+                app.close()
 
         self.assertEqual(created.last_test_status, "")
 
@@ -68,7 +70,10 @@ class ResponseContractTests(unittest.TestCase):
                 engine.dispose()
 
             app = SyncraftApp(config)
-            channels = app.list_channels()
+            try:
+                channels = app.list_channels()
+            finally:
+                app.close()
 
         self.assertEqual(len(channels), 1)
         self.assertEqual(channels[0].last_test_status, "")
@@ -76,20 +81,23 @@ class ResponseContractTests(unittest.TestCase):
     def test_channel_test_and_sample_return_documented_status_shape(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             app = SyncraftApp(_build_app_config(temp_dir))
-            created = app.create_channel(
-                {
-                    "name": "Slack Alerts",
-                    "platform": "slack",
-                    "auth_type": "webhook",
-                    "auth_config": {"values": {"webhook_url": "https://hooks.slack.com/services/XXX/YYY/ZZZ"}},
-                    "target_config": {"values": {}},
-                }
-            )
+            try:
+                created = app.create_channel(
+                    {
+                        "name": "Slack Alerts",
+                        "platform": "slack",
+                        "auth_type": "webhook",
+                        "auth_config": {"values": {"webhook_url": "https://hooks.slack.com/services/XXX/YYY/ZZZ"}},
+                        "target_config": {"values": {}},
+                    }
+                )
 
-            with patch("syncraft.app.test_channel_configuration", return_value=("success", "ok")):
-                tested = app.test_channel(created.id)
-            with patch("syncraft.app.send_channel_sample", return_value=("success", "sent")):
-                sampled = app.send_channel_sample_message(created.id)
+                with patch("syncraft.app.test_channel_configuration", return_value=("success", "ok")):
+                    tested = app.test_channel(created.id)
+                with patch("syncraft.app.send_channel_sample", return_value=("success", "sent")):
+                    sampled = app.send_channel_sample_message(created.id)
+            finally:
+                app.close()
 
         self.assertEqual(tested.status, "active")
         self.assertEqual(tested.last_test_status, "success")

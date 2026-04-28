@@ -67,6 +67,23 @@ class SyncraftApp:
             Base.metadata.create_all(bind=self.database_manager.engine)
         self._storage_dependency = build_storage_dependency(self.database_manager)
 
+    def close(self) -> None:
+        """Release database and storage resources held by the application."""
+
+        self.database_manager.dispose()
+
+    def __enter__(self) -> SyncraftApp:
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
+
     @contextmanager
     def service(self) -> StorageBackend:
         """Yield the active storage service bound to the current runtime configuration"""

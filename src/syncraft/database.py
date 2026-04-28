@@ -10,6 +10,7 @@ from urllib.parse import quote_plus
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine, URL, make_url
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from syncraft.config import AppConfig
 
@@ -35,6 +36,7 @@ def build_engine(config: AppConfig):
         sqlite_path = config.database_url.removeprefix("sqlite:///")
         Path(sqlite_path).parent.mkdir(parents=True, exist_ok=True)
         engine_options["connect_args"] = {"check_same_thread": False}
+        engine_options["poolclass"] = NullPool
     else:
         engine_options["pool_pre_ping"] = True
     return create_engine(config.database_url, **engine_options)
