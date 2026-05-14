@@ -1,10 +1,17 @@
 name: Deploy Doxygen Docs
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows:
+      - Release
+    types:
+      - completed
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build docs for, for example v1.2.3"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -17,10 +24,33 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Resolve documentation version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="${{ inputs.tag }}"
+          else
+            TAG_NAME="$(git tag --points-at "${{ github.event.workflow_run.head_sha }}" 'v*' | head -n 1)"
+          fi
+
+          if [ -z "$TAG_NAME" ]; then
+            echo "No v* release tag found for this documentation build"
+            exit 1
+          fi
+
+          PACKAGE_VERSION="$(python scripts/resolve_release_version.py "$TAG_NAME" --write-files)"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building documentation for $TAG_NAME / $PACKAGE_VERSION"
 
       - name: Install Doxygen and Graphviz
         run: |
@@ -29,7 +59,8 @@ jobs:
 
       - name: Build documentation
         run: |
-          doxygen docs/Doxyfile
+          sed 's/^PROJECT_NUMBER.*/PROJECT_NUMBER         = "${{ steps.version.outputs.package_version }}"/' docs/Doxyfile > docs/Doxyfile.release
+          doxygen docs/Doxyfile.release
           touch site/html/.nojekyll
 
       - name: Upload Pages artifact
