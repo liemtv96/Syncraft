@@ -25,7 +25,7 @@ site/html
 
 ## GitHub Pages deployment
 
-This repository includes a workflow at `.github/workflows/deploy-docs.yml` that builds the Doxygen site and publishes it to GitHub Pages when changes are pushed to `main`.
+This repository includes a workflow at `.github/workflows/deploy-docs.yml` that builds the Doxygen site and publishes it to GitHub Pages after the release workflow succeeds for a `v*` tag. The workflow resolves the same package version from the release tag and injects it into the generated Doxygen site.
 
 Use the Pages settings in GitHub to set:
 
