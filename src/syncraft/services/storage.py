@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import socket
+import ssl
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import get_args
@@ -17,6 +20,54 @@ from syncraft.config import AppConfig
 from syncraft.provider_registry import get_provider_setup
 
 SUPPORTED_PLATFORMS = set(get_args(schemas.Platform))
+DEFAULT_PROVIDER_TIMEOUT_SECONDS = 30.0
+DEFAULT_PROVIDER_UPLOAD_TIMEOUT_SECONDS = 900.0
+UPLOAD_TIMEOUT_BODY_THRESHOLD_BYTES = 10 * 1024 * 1024
+
+
+def _env_float(name: str, default: float) -> float:
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        value = float(raw_value)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+PROVIDER_TIMEOUT_SECONDS = _env_float(
+    "SYNCRAFT_PROVIDER_TIMEOUT_SECONDS",
+    DEFAULT_PROVIDER_TIMEOUT_SECONDS,
+)
+PROVIDER_UPLOAD_TIMEOUT_SECONDS = _env_float(
+    "SYNCRAFT_PROVIDER_UPLOAD_TIMEOUT_SECONDS",
+    DEFAULT_PROVIDER_UPLOAD_TIMEOUT_SECONDS,
+)
+
+
+class ProviderConnectivityError(RuntimeError):
+    pass
+
+
+def _provider_ssl_context(url: str) -> ssl.SSLContext | None:
+    if not url.lower().startswith("https://"):
+        return None
+    context = ssl.create_default_context()
+    ignore_unexpected_eof = getattr(ssl, "OP_IGNORE_UNEXPECTED_EOF", 0)
+    if ignore_unexpected_eof:
+        context.options |= ignore_unexpected_eof
+    return context
+
+
+def _provider_connectivity_message(exc: BaseException) -> str:
+    reason = exc.reason if isinstance(exc, error.URLError) else exc
+    if isinstance(reason, ssl.SSLEOFError):
+        return (
+            "provider closed the TLS connection before the upload completed. "
+            "This usually means the provider, reverse proxy, or workspace file-size limit rejected the upload."
+        )
+    return str(reason)
 
 
 def _mask_secret(value: str) -> str:
@@ -803,16 +854,25 @@ class StorageService:
 
     def sync_channel_assets(self, channel: models.Channel) -> int | None:
         created_assets: list[schemas.AssetCreate]
+        reconcile_missing = False
         if channel.platform == "slack" and channel.auth_type == "bot":
             created_assets = _sync_slack_channel_assets(channel)
+            reconcile_missing = True
         elif channel.platform == "discord" and channel.auth_type == "bot":
             created_assets = _sync_discord_channel_assets(channel)
+            reconcile_missing = True
+        elif channel.platform == "mattermost" and channel.auth_type == "bot":
+            created_assets = _sync_mattermost_channel_assets(channel)
+        elif channel.platform == "rocketchat" and channel.auth_type == "bot":
+            created_assets = _sync_rocketchat_channel_assets(channel)
+        elif channel.platform == "telegram" and channel.auth_type == "bot":
+            created_assets = _sync_telegram_bot_assets(channel)
         else:
             return None
 
         for payload in created_assets:
             self._upsert_remote_asset(payload)
-        removed_assets = self._remove_missing_channel_assets(channel, created_assets)
+        removed_assets = self._remove_missing_channel_assets(channel, created_assets) if reconcile_missing else 0
         channel.asset_last_synced_at = datetime.utcnow()
         self.session.add(channel)
         self.session.commit()
@@ -1244,8 +1304,10 @@ def test_channel_configuration(
         return "success", setup.test_message
     except HTTPException:
         raise
+    except ProviderConnectivityError as exc:
+        return "failed", f"Provider connectivity failed: {exc}"
     except error.URLError as exc:
-        return "failed", f"Provider connectivity failed: {exc.reason}"
+        return "failed", f"Provider connectivity failed: {_provider_connectivity_message(exc)}"
     except Exception as exc:
         return "failed", f"Provider test failed: {exc}"
 
@@ -1519,6 +1581,57 @@ def _build_telegram_message_payload(
         author_name=_telegram_author_name(message),
         attachment_count=attachment_count,
         external_url=external_url,
+    )
+
+
+def _telegram_file_from_message(message: dict[str, object]) -> tuple[dict[str, object], str, str, str] | None:
+    file_fields = [
+        ("document", "document"),
+        ("video", "video"),
+        ("audio", "audio"),
+        ("voice", "audio"),
+        ("video_note", "video"),
+        ("animation", "video"),
+        ("sticker", "image"),
+    ]
+    for field_name, asset_type in file_fields:
+        value = message.get(field_name)
+        if isinstance(value, dict):
+            file_name = str(value.get("file_name") or f"telegram-{field_name}")
+            mime_type = str(value.get("mime_type") or "application/octet-stream")
+            return value, file_name, mime_type, asset_type
+    photos = message.get("photo")
+    if isinstance(photos, list) and photos:
+        photo = photos[-1]
+        if isinstance(photo, dict):
+            return photo, "telegram-photo.jpg", "image/jpeg", "image"
+    return None
+
+
+def _build_telegram_asset_from_message(
+    channel: models.Channel | schemas.ChannelCreate,
+    message: dict[str, object],
+) -> schemas.AssetCreate | None:
+    provider_message_id = str(message.get("message_id", "")).strip()
+    if not provider_message_id:
+        return None
+    file_item = _telegram_file_from_message(message)
+    if file_item is None:
+        return None
+    telegram_file, file_name, mime_type, asset_type = file_item
+    provider_asset_id = str(telegram_file.get("file_id") or "").strip()
+    if not provider_asset_id:
+        return None
+    return _build_remote_asset_payload(
+        channel,
+        provider_asset_id=provider_asset_id,
+        provider_message_id=provider_message_id,
+        remote_url="",
+        preview_url="",
+        name=file_name,
+        mime_type=mime_type,
+        size_bytes=int(telegram_file.get("file_size") or 0),
+        asset_type=asset_type,
     )
 
 
@@ -2790,6 +2903,26 @@ def _sync_telegram_bot_messages(
     return {"messages": messages, "next_offset": next_offset}
 
 
+def _sync_telegram_bot_assets(channel: models.Channel) -> list[schemas.AssetCreate]:
+    auth_config = _load_auth_config(channel)
+    target_config = _load_target_config(channel)
+    token = auth_config.get_str("bot_token")
+    chat_id = _require_string(target_config.values.get("chat_id"), "chat_id")
+    offset = int(channel.asset_sync_cursor) if channel.asset_sync_cursor.strip().isdigit() else 0
+    payload = _sync_telegram_bot_messages(token, offset=offset)
+    created_assets: list[schemas.AssetCreate] = []
+    for message_payload in payload["messages"]:
+        provider_chat_id = str(message_payload.get("chat", {}).get("id", ""))
+        if provider_chat_id != chat_id:
+            continue
+        asset_payload = _build_telegram_asset_from_message(channel, message_payload)
+        if asset_payload is not None:
+            created_assets.append(asset_payload)
+    if payload["next_offset"]:
+        channel.asset_sync_cursor = str(payload["next_offset"])
+    return created_assets
+
+
 def _sync_slack_channel_assets(channel: models.Channel) -> list[schemas.AssetCreate]:
     auth_config = _load_auth_config(channel)
     target_config = _load_target_config(channel)
@@ -2884,6 +3017,170 @@ def _sync_discord_channel_assets(channel: models.Channel) -> list[schemas.AssetC
         if len(payload) < 100 or not before_message_id:
             break
     channel.asset_sync_cursor = max_message_id
+    return created_assets
+
+
+def _build_mattermost_asset_from_file_info(
+    channel: models.Channel | schemas.ChannelCreate,
+    base_url: str,
+    post_id: str,
+    file_info: dict[str, object],
+) -> schemas.AssetCreate | None:
+    file_id = str(file_info.get("id", "")).strip()
+    if not file_id:
+        return None
+    file_name = str(file_info.get("name") or file_info.get("filename") or "mattermost-file")
+    mime_type = str(file_info.get("mime_type") or "application/octet-stream")
+    remote_url = f"{base_url}/api/v4/files/{file_id}"
+    preview_path = str(file_info.get("mini_preview") or "")
+    preview_url = preview_path if preview_path.startswith(("http://", "https://")) else (f"{base_url}{preview_path}" if preview_path else remote_url)
+    return _build_remote_asset_payload(
+        channel,
+        provider_asset_id=file_id,
+        provider_message_id=post_id,
+        remote_url=remote_url,
+        preview_url=preview_url,
+        name=file_name,
+        mime_type=mime_type,
+        size_bytes=int(file_info.get("size") or 0),
+        asset_type=str(file_info.get("extension") or "document"),
+    )
+
+
+def _sync_mattermost_channel_assets(channel: models.Channel) -> list[schemas.AssetCreate]:
+    auth_config = _load_auth_config(channel)
+    target_config = _load_target_config(channel)
+    token = auth_config.get_str("access_token")
+    base_url = _normalize_server_url(auth_config.get_str("server_url"))
+    channel_id = _require_string(target_config.values.get("channel_id"), "channel_id")
+    params = {"page": "0", "per_page": "100"}
+    if channel.asset_sync_cursor:
+        params["since"] = channel.asset_sync_cursor
+    payload = _mattermost_api_request(
+        base_url,
+        f"/api/v4/channels/{parse.quote(channel_id, safe='')}/posts?{parse.urlencode(params)}",
+        token,
+        method="GET",
+    )
+    order = payload.get("order")
+    posts = payload.get("posts")
+    if not isinstance(order, list) or not isinstance(posts, dict):
+        return []
+
+    created_assets: list[schemas.AssetCreate] = []
+    max_timestamp = channel.asset_sync_cursor
+    for post_id in order:
+        post = posts.get(post_id) if isinstance(post_id, str) else None
+        if not isinstance(post, dict):
+            continue
+        provider_message_id = str(post.get("id", "")).strip()
+        if not provider_message_id:
+            continue
+        update_raw = str(post.get("update_at") or post.get("create_at") or "").strip()
+        if update_raw and (not max_timestamp or update_raw > max_timestamp):
+            max_timestamp = update_raw
+        file_ids = post.get("file_ids")
+        if not isinstance(file_ids, list):
+            continue
+        for file_id in file_ids:
+            if not isinstance(file_id, str) or not file_id.strip():
+                continue
+            file_info = _mattermost_api_request(
+                base_url,
+                f"/api/v4/files/{parse.quote(file_id, safe='')}/info",
+                token,
+                method="GET",
+            )
+            asset_payload = _build_mattermost_asset_from_file_info(channel, base_url, provider_message_id, file_info)
+            if asset_payload is not None:
+                created_assets.append(asset_payload)
+    channel.asset_sync_cursor = max_timestamp
+    return created_assets
+
+
+def _sync_rocketchat_channel_assets(channel: models.Channel) -> list[schemas.AssetCreate]:
+    auth_config = _load_auth_config(channel)
+    target_config = _load_target_config(channel)
+    auth_token = auth_config.get_str("auth_token")
+    user_id = auth_config.get_str("user_id")
+    base_url = _normalize_server_url(auth_config.get_str("server_url"))
+    room_id = _require_string(target_config.values.get("room_id"), "room_id")
+    room_info_payload = _rocketchat_api_request(
+        base_url,
+        f"/api/v1/rooms.info?{parse.urlencode({'roomId': room_id})}",
+        auth_token,
+        user_id,
+        method="GET",
+    )
+    room = room_info_payload.get("room")
+    room_type = str(room.get("t") or "") if isinstance(room, dict) else ""
+    history_path = "/api/v1/channels.history"
+    if room_type == "p":
+        history_path = "/api/v1/groups.history"
+    elif room_type == "d":
+        history_path = "/api/v1/im.history"
+
+    params = {"roomId": room_id, "count": "100"}
+    if channel.asset_sync_cursor:
+        params["oldest"] = channel.asset_sync_cursor
+    payload = _rocketchat_api_request(
+        base_url,
+        f"{history_path}?{parse.urlencode(params)}",
+        auth_token,
+        user_id,
+        method="GET",
+    )
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return []
+
+    created_assets: list[schemas.AssetCreate] = []
+    max_timestamp = channel.asset_sync_cursor
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        provider_message_id = str(message.get("_id", "")).strip()
+        sent_at = _datetime_from_iso_timestamp(message.get("ts"))
+        if not provider_message_id or sent_at is None:
+            continue
+        sent_at_text = sent_at.isoformat()
+        if not max_timestamp or sent_at_text > max_timestamp:
+            max_timestamp = sent_at_text
+        files = message.get("files")
+        attachments = message.get("attachments")
+        if not isinstance(files, list):
+            continue
+        attachment_items = attachments if isinstance(attachments, list) else []
+        for index, file_info in enumerate(files):
+            if not isinstance(file_info, dict):
+                continue
+            provider_asset_id = str(file_info.get("_id") or "").strip()
+            if not provider_asset_id:
+                continue
+            attachment_info = (
+                attachment_items[index]
+                if index < len(attachment_items) and isinstance(attachment_items[index], dict)
+                else {}
+            )
+            remote_path = str(attachment_info.get("title_link") or attachment_info.get("image_url") or "")
+            remote_url = remote_path if remote_path.startswith(("http://", "https://")) else (f"{base_url}{remote_path}" if remote_path else "")
+            preview_path = str(attachment_info.get("image_url") or attachment_info.get("title_link") or "")
+            preview_url = preview_path if preview_path.startswith(("http://", "https://")) else (f"{base_url}{preview_path}" if preview_path else remote_url)
+            mime_type = str(file_info.get("type") or "application/octet-stream")
+            created_assets.append(
+                _build_remote_asset_payload(
+                    channel,
+                    provider_asset_id=provider_asset_id,
+                    provider_message_id=provider_message_id,
+                    remote_url=remote_url,
+                    preview_url=preview_url,
+                    name=str(file_info.get("name") or "rocketchat-file"),
+                    mime_type=mime_type,
+                    size_bytes=int(attachment_info.get("image_size") or 0),
+                    asset_type=mime_type,
+                )
+            )
+    channel.asset_sync_cursor = max_timestamp
     return created_assets
 
 
@@ -3159,8 +3456,9 @@ def _perform_json_request(
     method: str,
     headers: dict[str, str] | None = None,
     body: bytes | None = None,
+    timeout: float | None = None,
 ) -> bytes:
-    return _perform_request(url, method=method, headers=headers, body=body)
+    return _perform_request(url, method=method, headers=headers, body=body, timeout=timeout)
 
 
 def _perform_request(
@@ -3169,6 +3467,7 @@ def _perform_request(
     method: str,
     headers: dict[str, str] | None = None,
     body: bytes | None = None,
+    timeout: float | None = None,
 ) -> bytes:
     request_headers = {
         "User-Agent": "Syncraft/1.0",
@@ -3177,13 +3476,26 @@ def _perform_request(
     if headers:
         request_headers.update(headers)
     req = request.Request(url, data=body, headers=request_headers, method=method)
+    request_timeout = timeout
+    if request_timeout is None:
+        request_timeout = (
+            PROVIDER_UPLOAD_TIMEOUT_SECONDS
+            if body is not None and len(body) >= UPLOAD_TIMEOUT_BODY_THRESHOLD_BYTES
+            else PROVIDER_TIMEOUT_SECONDS
+        )
+    urlopen_kwargs: dict[str, object] = {"timeout": request_timeout}
+    ssl_context = _provider_ssl_context(url)
+    if ssl_context is not None:
+        urlopen_kwargs["context"] = ssl_context
     try:
-        with request.urlopen(req, timeout=10) as response:
+        with request.urlopen(req, **urlopen_kwargs) as response:
             return response.read()
     except error.HTTPError as exc:
         payload = exc.read().decode("utf-8", errors="ignore").strip()
         reason = payload or exc.reason
         raise RuntimeError(f"{exc.code} {reason}") from exc
+    except (error.URLError, ssl.SSLError, socket.timeout, TimeoutError) as exc:
+        raise ProviderConnectivityError(_provider_connectivity_message(exc)) from exc
 
 
 def _raise_missing_remote_asset(asset: models.Asset, exc: RuntimeError) -> None:
@@ -3283,8 +3595,10 @@ def send_channel_message(
         if platform == "discord" and auth_type == "bot":
             return _send_discord_bot_message(channel, auth_config, target_config, title, content, attachments, decoded_attachments)
         return "failed", f"Message send is not implemented for {platform} {auth_type} yet", []
+    except ProviderConnectivityError as exc:
+        return "failed", f"Provider connectivity failed: {exc}", []
     except error.URLError as exc:
-        return "failed", f"Provider connectivity failed: {exc.reason}", []
+        return "failed", f"Provider connectivity failed: {_provider_connectivity_message(exc)}", []
     except Exception as exc:
         return "failed", f"Message send failed: {exc}", []
 

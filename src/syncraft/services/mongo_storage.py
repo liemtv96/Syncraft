@@ -21,10 +21,13 @@ from syncraft.services.storage import (
     _require_string,
     _sync_discord_channel_assets,
     _sync_discord_channel_messages,
+    _sync_mattermost_channel_assets,
     _sync_mattermost_channel_messages,
+    _sync_rocketchat_channel_assets,
     _sync_rocketchat_channel_messages,
     _sync_slack_channel_assets,
     _sync_slack_channel_messages,
+    _sync_telegram_bot_assets,
     _sync_telegram_bot_messages,
     delete_remote_asset,
     fetch_asset_content,
@@ -434,15 +437,24 @@ class MongoStorageService:
         return {"synced_channels": synced_channels, "synced_assets": synced_assets, "skipped_channels": skipped_channels}
 
     def sync_channel_assets(self, channel: models.Channel) -> int | None:
+        reconcile_missing = False
         if channel.platform == "slack" and channel.auth_type == "bot":
             created_assets = _sync_slack_channel_assets(channel)
+            reconcile_missing = True
         elif channel.platform == "discord" and channel.auth_type == "bot":
             created_assets = _sync_discord_channel_assets(channel)
+            reconcile_missing = True
+        elif channel.platform == "mattermost" and channel.auth_type == "bot":
+            created_assets = _sync_mattermost_channel_assets(channel)
+        elif channel.platform == "rocketchat" and channel.auth_type == "bot":
+            created_assets = _sync_rocketchat_channel_assets(channel)
+        elif channel.platform == "telegram" and channel.auth_type == "bot":
+            created_assets = _sync_telegram_bot_assets(channel)
         else:
             return None
         for payload in created_assets:
             self._upsert_remote_asset(payload)
-        removed_assets = self._remove_missing_channel_assets(channel, created_assets)
+        removed_assets = self._remove_missing_channel_assets(channel, created_assets) if reconcile_missing else 0
         channel.asset_last_synced_at = datetime.utcnow()
         self._replace_model(models.Channel, channel)
         if removed_assets:
